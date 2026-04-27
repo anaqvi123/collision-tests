@@ -16,9 +16,9 @@ sf::Vector2f unitVector(sf::Vector2f vec){
 float dotProduct(sf::Vector2f vec1, sf::Vector2f vec2){
 	return vec1.x * vec2.x + vec1.y * vec2.y;
 }
-sf::Vector2f vectorProjection(sf::Vector2f vec1, sf::Vector2f vec2){
+float vectorProjection(sf::Vector2f vec1, sf::Vector2f vec2){
 	float magnitude = vectorMagnitude(vec2);
-	return dotProduct(vec1, vec2) / (magnitude * magnitude) * vec2;
+	return dotProduct(vec1, vec2) / (magnitude * magnitude);
 }
 
 
@@ -30,12 +30,14 @@ struct Rectangle{
 	float y;
 	float width;
 	float height;
+	float rotation;
 
 	Rectangle(float width, float height, float x, float y, float rotation){
 		this->x = x;
 		this->y = y;
 		this->width = width;
 		this->height = height;
+		this->rotation = rotation;
 		rectangle.setSize(sf::Vector2f(width, height));
 		rectangle.setOutlineColor(sf::Color::White);
 		rectangle.setRotation(sf::degrees(rotation));
@@ -43,67 +45,174 @@ struct Rectangle{
 	}
 
 	std::vector<sf::Vector2f> getCorners(){
-		sf::Vector2f direction = {std::cos(rectangle.getRotation().asDegrees()), std::sin(rectangle.getRotation().asDegrees())};
+		sf::Vector2f direction1 = {std::cos(rotation * 3.14159f / 180.0f), std::sin(rotation * 3.14159f / 180.0f)};
+		sf::Vector2f direction2 = {-direction1.y, direction1.x};
 		sf::Vector2f corner1 = {x, y};
-		sf::Vector2f corner2 = {x + direction, y};
+		sf::Vector2f corner2 = {x + direction1.x * width, y + direction1.y * width};
+		sf::Vector2f corner3 = {x + direction1.x * width + direction2.x * height, y + direction1.y * width + direction2.y * height};
+		sf::Vector2f corner4 = {x + direction2.x * height, y + direction2.y * height};
+		return std::vector<sf::Vector2f>{corner1, corner2, corner3, corner4};
 	}
+
+	std::vector<sf::Vector2f> findNormals(){
+		std::vector<sf::Vector2f> corners = getCorners();
+		sf::Vector2f normal1 = unitVector(corners[1] - corners[0]);
+		sf::Vector2f normal2 = unitVector(corners[3] - corners[0]);
+		return {normal1, normal2};
+	}
+};
+
+struct Circle{
+	sf::CircleShape circle;
+	float radius = 20;
+	int points = 100;
+	float restitution = 0.9;
+	float mass;
+	float x;
+	float y;
+	float vx;
+	float vy;
+	float ax;
+	float ay;
+
+	Circle(float x, float y, float vx, float vy, float ax, float ay, const float mass, const float radius){
+		this->x = x;
+		this->y = y;
+		this->vx = vx;
+		this->vy = vy;
+		this->ax = ax;
+		this->ay = ay;
+		this->mass = mass;
+		circle.setRadius(radius);
+		circle.setOrigin({radius, radius}); // make the center (0, 0)
+		circle.setPointCount(points);
+		circle.setFillColor(sf::Color::Blue);
+	}
+
+	void update(float dt){
+		x = x + vx * dt; 
+		y = y + vy * dt;
+		vx = vx + ax * dt;
+		vy = vy + ay * dt;
+		vx *= 0.999f;
+		vy *= 0.999f;
+	}
+
+	void wallCollision(sf::RenderWindow& window, std::vector<std::vector<sf::Vector2f>> lines){
+		for(std::vector<sf::Vector2f>& line : lines){
+			sf::Vector2f lineVec = {line[1].x - line[0].x, line[1].y - line[0].y};
+			sf::Vector2f relativePos = sf::Vector2f{x, y} - line[0];
+			sf::Vector2f lineNormalUnitVec = unitVector({-lineVec.y, lineVec.x});
+			
+			float closestPoint = vectorProjection(relativePos, lineVec);
+			if(closestPoint > 1){closestPoint = 1;}
+			if(closestPoint < 0){closestPoint = 0;}
+			sf::Vector2f closestPointPos = line[0] + closestPoint * lineVec;
+
+			float distanceFromClosestPoint = vectorMagnitude({x - closestPointPos.x, y - closestPointPos.y});
+
+			if(distanceFromClosestPoint < radius && dotProduct({vx, vy}, lineNormalUnitVec) < 0){ // distance < radius and moving toward line
+				sf::Vector2f normalVel = dotProduct({vx, vy}, -lineNormalUnitVec) * -lineNormalUnitVec;
+				sf::Vector2f sidewaysVel = sf::Vector2f{vx, vy} - normalVel;
+				
+				vx = sidewaysVel.x - normalVel.x * restitution;
+				vy = sidewaysVel.y - normalVel.y * restitution;
+
+				float overlap = radius - distanceFromClosestPoint;
+				x += overlap * lineNormalUnitVec.x;
+				y += overlap * lineNormalUnitVec.y;
+			}
+		}
+	}
+		
+	void draw(sf::RenderWindow& window){
+		circle.setPosition({x, y});
+		window.draw(circle);
+	};
 };
 
 
 
-
-
-std::vector<sf::Vector2f> findNormals(Rectangle& r){
-	sf::Vector2f normal1 = sf::Vector2f{r.x + r.width, r.y} - sf::Vector2f{r.x, r.y};
-	sf::Vector2f normal2 = sf::Vector2f{r.x, r.y + r.height} - sf::Vector2f{r.x, r.y};
-	return {normal1, normal2};
-}
-
-sf::Vector2f minAndMaxOnAxis(Rectangle r, sf::Vector2f axis){
-	float corner1 = dotProduct({r.x, r.y}, axis);
-	float corner2 = dotProduct({r.x + r.width, r.y}, axis);
-	float corner3 = dotProduct({r.x + r.width, r.y + r.height}, axis);
-	float corner4 = dotProduct({r.x, r.y + r.height}, axis);
-	
+sf::Vector2f minAndMaxOnAxis(Rectangle& r, sf::Vector2f axis){
+	std::vector<sf::Vector2f> corners = r.getCorners();
+	float corner1 = dotProduct(corners[0], axis);
+	float corner2 = dotProduct(corners[1], axis);
+	float corner3 = dotProduct(corners[2], axis);
+	float corner4 = dotProduct(corners[3], axis);
 	return sf::Vector2f(std::min({corner1, corner2, corner3, corner4}), std::max({corner1, corner2, corner3, corner4}));
 }
 
-bool detectCollision(sf::RenderWindow& window, Rectangle& r1, Rectangle& r2){
-		std::vector<sf::Vector2f> normalsR1 = findNormals(r1);
-		std::vector<sf::Vector2f> normalsR2 = findNormals(r2);
-		
-		bool colliding = true;
+bool detectCollision(Rectangle& r1, Rectangle& r2){
+	std::vector<sf::Vector2f> normalsR1 = r1.findNormals();
+	std::vector<sf::Vector2f> normalsR2 = r2.findNormals();
+	bool colliding = true;
 
-		for(sf::Vector2f axis : normalsR1){
-			sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
-			sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
+	for(sf::Vector2f axis : normalsR1){
+		sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
+		sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
 
-			if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
-				colliding = false;
-			}
+		if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+			colliding = false;
+			break;
 		}
-
-		if(colliding){
-			r1.rectangle.setFillColor(sf::Color::Red);
-			r2.rectangle.setFillColor(sf::Color::Red);
-		}
-		else{
-			r1.rectangle.setFillColor(sf::Color::White);
-			r2.rectangle.setFillColor(sf::Color::White);
-		}
-
-		return colliding;
 	}
+	if(colliding == true){
+	for(sf::Vector2f axis : normalsR2){
+		sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
+		sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
 
+		if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+			colliding = false;
+			break;
+		}
+	}
+	}
+	return colliding;
+}
+/*bool detectCollision(Circle& c1, Rectangle& r2){
+	std::vector<sf::Vector2f> normalsR1 = r1.findNormals();
+	std::vector<sf::Vector2f> normalsR2 = r2.findNormals();
+	bool colliding = true;
 
+	for(sf::Vector2f axis : normalsR1){
+		sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
+		sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
+
+		if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+			colliding = false;
+			break;
+		}
+	}
+	if(colliding == true){
+	for(sf::Vector2f axis : normalsR2){
+		sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
+		sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
+
+		if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+			colliding = false;
+			break;
+		}
+	}
+	}
+	return colliding;
+}
+*/
 int main()
 {
 	sf::RenderWindow window(sf::VideoMode({1280, 720}), "Collision Tests");
 	window.setFramerateLimit(60);
 
 	Rectangle rectangle1(100, 30, 300, 300, 30);
-	Rectangle rectangle2(100, 30, 500, 500, 0);
+	Rectangle rectangle2(100, 30, 500, 500, -50);
 
+	sf::CircleShape c1;
+	c1.setRadius(5);
+	sf::CircleShape c2;
+	c2.setRadius(5);
+	sf::CircleShape c3;
+	c3.setRadius(5);
+	sf::CircleShape c4;
+	c4.setRadius(5);
 
 	while (window.isOpen())
 	{
@@ -113,13 +222,52 @@ int main()
 				window.close();
 		}
 
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W)){
+			rectangle1.y -= 1;
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S)){
+			rectangle1.y += 1;
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A)){
+			rectangle1.x -= 1;
+		}
+		if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D)){
+			rectangle1.x += 1;
+		}
+
+
+
 		window.clear();
-		rectangle1.x += 1;
-		rectangle1.y += 1;
 		rectangle1.rectangle.setPosition({rectangle1.x, rectangle1.y});
 		window.draw(rectangle1.rectangle);
 		window.draw(rectangle2.rectangle);
-		detectCollision(window, rectangle1, rectangle2);
+
+		bool colliding = detectCollision(rectangle1, rectangle2);
+		if(colliding){
+			rectangle1.rectangle.setFillColor(sf::Color::Red);
+			rectangle2.rectangle.setFillColor(sf::Color::Red);
+		}
+		else{
+			rectangle1.rectangle.setFillColor(sf::Color::White);
+			rectangle2.rectangle.setFillColor(sf::Color::White);
+		}
+
+
+
+		//std::cout << c1.getPosition().y << ' ';
+
+		//c1.setPosition(corners[0]);
+		//c2.setPosition(corners[1]);
+		//c3.setPosition(corners[2]);
+		//c4.setPosition(corners[3]);
+		
+		//window.draw(c1);
+		//window.draw(c2);
+		//window.draw(c3);
+		//window.draw(c4);
+		
+
+
 		window.display();
 	}
 }
