@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <iostream>
+#include <vector>
 
 float vectorMagnitude(sf::Vector2f vec){
 	return std::sqrt(vec.x * vec.x + vec.y * vec.y);
@@ -30,17 +31,33 @@ struct Rectangle{
 	float width;
 	float height;
 
-	Rectangle(float width, float height, float x, float y){
+	Rectangle(float width, float height, float x, float y, float rotation){
 		this->x = x;
 		this->y = y;
 		this->width = width;
 		this->height = height;
 		rectangle.setSize(sf::Vector2f(width, height));
 		rectangle.setOutlineColor(sf::Color::White);
+		rectangle.setRotation(sf::degrees(rotation));
 		rectangle.setPosition({x, y});
 	}
 
+	std::vector<sf::Vector2f> getCorners(){
+		sf::Vector2f direction = {std::cos(rectangle.getRotation().asDegrees()), std::sin(rectangle.getRotation().asDegrees())};
+		sf::Vector2f corner1 = {x, y};
+		sf::Vector2f corner2 = {x + direction, y};
+	}
 };
+
+
+
+
+
+std::vector<sf::Vector2f> findNormals(Rectangle& r){
+	sf::Vector2f normal1 = sf::Vector2f{r.x + r.width, r.y} - sf::Vector2f{r.x, r.y};
+	sf::Vector2f normal2 = sf::Vector2f{r.x, r.y + r.height} - sf::Vector2f{r.x, r.y};
+	return {normal1, normal2};
+}
 
 sf::Vector2f minAndMaxOnAxis(Rectangle r, sf::Vector2f axis){
 	float corner1 = dotProduct({r.x, r.y}, axis);
@@ -51,19 +68,22 @@ sf::Vector2f minAndMaxOnAxis(Rectangle r, sf::Vector2f axis){
 	return sf::Vector2f(std::min({corner1, corner2, corner3, corner4}), std::max({corner1, corner2, corner3, corner4}));
 }
 
-void detectCollision(sf::RenderWindow& window, Rectangle& r1, Rectangle& r2){
-		sf::Vector2f xAxis = {1, 0};
-		sf::Vector2f yAxis = {0, 1};
-
-		sf::Vector2f r1MinMaxXAxis = minAndMaxOnAxis(r1, xAxis);
-		sf::Vector2f r1MinMaxYAxis = minAndMaxOnAxis(r1, yAxis);
-
-		sf::Vector2f r2MinMaxXAxis = minAndMaxOnAxis(r2, xAxis);
-		sf::Vector2f r2MinMaxYAxis = minAndMaxOnAxis(r2, yAxis);
+bool detectCollision(sf::RenderWindow& window, Rectangle& r1, Rectangle& r2){
+		std::vector<sf::Vector2f> normalsR1 = findNormals(r1);
+		std::vector<sf::Vector2f> normalsR2 = findNormals(r2);
 		
+		bool colliding = true;
 
+		for(sf::Vector2f axis : normalsR1){
+			sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
+			sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
 
-		if(r2MinMaxXAxis.x <= r1MinMaxXAxis.y && r1MinMaxXAxis.x <= r2MinMaxXAxis.y && r2MinMaxYAxis.x <= r1MinMaxYAxis.y && r1MinMaxYAxis.x <= r2MinMaxYAxis.y){
+			if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+				colliding = false;
+			}
+		}
+
+		if(colliding){
 			r1.rectangle.setFillColor(sf::Color::Red);
 			r2.rectangle.setFillColor(sf::Color::Red);
 		}
@@ -71,16 +91,18 @@ void detectCollision(sf::RenderWindow& window, Rectangle& r1, Rectangle& r2){
 			r1.rectangle.setFillColor(sf::Color::White);
 			r2.rectangle.setFillColor(sf::Color::White);
 		}
+
+		return colliding;
 	}
 
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode({1920, 1080}), "Collision Tests");
+	sf::RenderWindow window(sf::VideoMode({1280, 720}), "Collision Tests");
 	window.setFramerateLimit(60);
 
-	Rectangle rectangle1(100, 30, 500, 500);
-	Rectangle rectangle2(100, 30, 700, 700);
+	Rectangle rectangle1(100, 30, 300, 300, 30);
+	Rectangle rectangle2(100, 30, 500, 500, 0);
 
 
 	while (window.isOpen())
