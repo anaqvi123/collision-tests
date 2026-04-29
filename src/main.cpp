@@ -7,7 +7,7 @@ float vectorMagnitude(sf::Vector2f vec){
 	return std::sqrt(vec.x * vec.x + vec.y * vec.y);
 }
 float vectorMagnitudeSquared(sf::Vector2f vec){
-	return std::sqrt(vec.x * vec.x + vec.y * vec.y);
+	return vec.x * vec.x + vec.y * vec.y;
 }
 float distanceSquared(sf::Vector2f pos1, sf::Vector2f pos2){
 	return vectorMagnitudeSquared({pos2.x - pos1.x, pos2.y - pos1.y});
@@ -134,7 +134,9 @@ struct Circle{
 	};
 };
 
-
+bool intervalsOverlap(sf::Vector2f a, sf::Vector2f b) {
+    return a.x <= b.y && b.x <= a.y;
+}
 
 sf::Vector2f minAndMaxOnAxis(Rectangle& r, sf::Vector2f axis){
 	std::vector<sf::Vector2f> corners = r.getCorners();
@@ -180,16 +182,17 @@ bool detectCollision(Rectangle& r1, Rectangle& r2){
 bool detectCollision(Circle& c, Rectangle& r){
 	std::vector<sf::Vector2f> normalsR = r.findNormals();
 	std::vector<sf::Vector2f> corners = r.getCorners();
-	std::vector<std::vector<sf::Vector2f>> lines = {{corners[1], corners[0]}, {corners[2], corners[1]}, {corners[3], corners[2]}, {corners[3], corners[1]}};
+	std::vector<std::vector<sf::Vector2f>> lines = {{corners[1], corners[0]}, {corners[2], corners[1]}, {corners[3], corners[2]}, {corners[3], corners[0]}};
 
-	sf::Vector2f closestPointReal = {0, 0};
+	sf::Vector2f closestPointReal = corners[0];
 
 	for(std::vector<sf::Vector2f>& line : lines){
 		sf::Vector2f lineVec = {line[1].x - line[0].x, line[1].y - line[0].y};
 		sf::Vector2f relativePos = sf::Vector2f{c.x, c.y} - line[0];
+		
 		float closestPoint = vectorProjection(relativePos, lineVec);
-		if(closestPoint > 1){closestPoint = 1;}
-		if(closestPoint < 0){closestPoint = 0;}
+		closestPoint = std::clamp(closestPoint, 0.0f, 1.0f);
+
 		sf::Vector2f closestPointPos = line[0] + closestPoint * lineVec;
 		if(distanceSquared({c.x, c.y}, closestPointPos) < distanceSquared({c.x, c.y}, closestPointReal)){closestPointReal = closestPointPos;}
 	}
@@ -202,7 +205,7 @@ bool detectCollision(Circle& c, Rectangle& r){
 		sf::Vector2f rMinMaxAxis = minAndMaxOnAxis(r, axis);
 		sf::Vector2f cMinMaxAxis = minAndMaxOnAxis(c, axis);
 
-		if(!(cMinMaxAxis.x <= rMinMaxAxis.y && rMinMaxAxis.x <= cMinMaxAxis.y)){
+		if(!intervalsOverlap(rMinMaxAxis, cMinMaxAxis)){
 			colliding = false;
 			break;
 		}
@@ -266,35 +269,26 @@ int main()
 		window.clear();
 		rectangle1.rectangle.setPosition({rectangle1.x, rectangle1.y});
 		
+		rectangle1.rectangle.setFillColor(sf::Color::White);
+		rectangle2.rectangle.setFillColor(sf::Color::White);
+		circle.circle.setFillColor(sf::Color::White);
 
 		bool collidingR = detectCollision(rectangle1, rectangle2);
 		if(collidingR){
 			rectangle1.rectangle.setFillColor(sf::Color::Red);
 			rectangle2.rectangle.setFillColor(sf::Color::Red);
 		}
-		else{
-			rectangle1.rectangle.setFillColor(sf::Color::White);
-			rectangle2.rectangle.setFillColor(sf::Color::White);
-		}
 
 		bool collidingC1 = detectCollision(circle, rectangle1);
 		if(collidingC1){
-			rectangle1.rectangle.setFillColor(sf::Color::Red);
-			circle.circle.setFillColor(sf::Color::Red);
-		}
-		else{
-			rectangle1.rectangle.setFillColor(sf::Color::White);
-			circle.circle.setFillColor(sf::Color::White);
+			rectangle1.rectangle.setFillColor(sf::Color::Blue);
+			circle.circle.setFillColor(sf::Color::Blue);
 		}
 
 		bool collidingC2 = detectCollision(circle, rectangle2);
 		if(collidingC2){
-			rectangle2.rectangle.setFillColor(sf::Color::Red);
-			circle.circle.setFillColor(sf::Color::Red);
-		}
-		else{
-			rectangle2.rectangle.setFillColor(sf::Color::White);
-			circle.circle.setFillColor(sf::Color::White);
+			rectangle2.rectangle.setFillColor(sf::Color::Green);
+			circle.circle.setFillColor(sf::Color::Green);
 		}
 
 		window.draw(rectangle1.rectangle);
