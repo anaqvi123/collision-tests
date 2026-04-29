@@ -6,8 +6,11 @@
 float vectorMagnitude(sf::Vector2f vec){
 	return std::sqrt(vec.x * vec.x + vec.y * vec.y);
 }
-float distance(sf::Vector2f pos1, sf::Vector2f pos2){
-	return vectorMagnitude({pos2.x - pos1.x, pos2.y - pos1.y});
+float vectorMagnitudeSquared(sf::Vector2f vec){
+	return std::sqrt(vec.x * vec.x + vec.y * vec.y);
+}
+float distanceSquared(sf::Vector2f pos1, sf::Vector2f pos2){
+	return vectorMagnitudeSquared({pos2.x - pos1.x, pos2.y - pos1.y});
 }
 sf::Vector2f unitVector(sf::Vector2f vec){
 	if(vectorMagnitude(vec) == 0){return {1, 0};}
@@ -17,8 +20,8 @@ float dotProduct(sf::Vector2f vec1, sf::Vector2f vec2){
 	return vec1.x * vec2.x + vec1.y * vec2.y;
 }
 float vectorProjection(sf::Vector2f vec1, sf::Vector2f vec2){
-	float magnitude = vectorMagnitude(vec2);
-	return dotProduct(vec1, vec2) / (magnitude * magnitude);
+	float magnitudeSquared = vectorMagnitudeSquared(vec2);
+	return dotProduct(vec1, vec2) / magnitudeSquared;
 }
 
 
@@ -97,7 +100,7 @@ struct Circle{
 		vx *= 0.999f;
 		vy *= 0.999f;
 	}
-
+/*
 	void wallCollision(sf::RenderWindow& window, std::vector<std::vector<sf::Vector2f>> lines){
 		for(std::vector<sf::Vector2f>& line : lines){
 			sf::Vector2f lineVec = {line[1].x - line[0].x, line[1].y - line[0].y};
@@ -109,22 +112,22 @@ struct Circle{
 			if(closestPoint < 0){closestPoint = 0;}
 			sf::Vector2f closestPointPos = line[0] + closestPoint * lineVec;
 
-			float distanceFromClosestPoint = vectorMagnitude({x - closestPointPos.x, y - closestPointPos.y});
+			float distanceFromClosestPoint = distanceSquared({x,y}, closestPointPos);
 
-			if(distanceFromClosestPoint < radius && dotProduct({vx, vy}, lineNormalUnitVec) < 0){ // distance < radius and moving toward line
+			if(distanceFromClosestPoint < radius * radius && dotProduct({vx, vy}, lineNormalUnitVec) < 0){ // distance < radius and moving toward line
 				sf::Vector2f normalVel = dotProduct({vx, vy}, -lineNormalUnitVec) * -lineNormalUnitVec;
 				sf::Vector2f sidewaysVel = sf::Vector2f{vx, vy} - normalVel;
 				
 				vx = sidewaysVel.x - normalVel.x * restitution;
 				vy = sidewaysVel.y - normalVel.y * restitution;
 
-				float overlap = radius - distanceFromClosestPoint;
+				float overlap = radius - std::sqrt(distanceFromClosestPoint);
 				x += overlap * lineNormalUnitVec.x;
 				y += overlap * lineNormalUnitVec.y;
 			}
 		}
 	}
-		
+		*/
 	void draw(sf::RenderWindow& window){
 		circle.setPosition({x, y});
 		window.draw(circle);
@@ -141,6 +144,11 @@ sf::Vector2f minAndMaxOnAxis(Rectangle& r, sf::Vector2f axis){
 	float corner4 = dotProduct(corners[3], axis);
 	return sf::Vector2f(std::min({corner1, corner2, corner3, corner4}), std::max({corner1, corner2, corner3, corner4}));
 }
+sf::Vector2f minAndMaxOnAxis(Circle& c, sf::Vector2f axis){
+	float projection = dotProduct({c.x, c.y}, axis);
+	return sf::Vector2f(projection - c.radius, projection + c.radius);
+}
+
 
 bool detectCollision(Rectangle& r1, Rectangle& r2){
 	std::vector<sf::Vector2f> normalsR1 = r1.findNormals();
@@ -169,34 +177,51 @@ bool detectCollision(Rectangle& r1, Rectangle& r2){
 	}
 	return colliding;
 }
-/*bool detectCollision(Circle& c1, Rectangle& r2){
-	std::vector<sf::Vector2f> normalsR1 = r1.findNormals();
-	std::vector<sf::Vector2f> normalsR2 = r2.findNormals();
+bool detectCollision(Circle& c, Rectangle& r){
+	std::vector<sf::Vector2f> normalsR = r.findNormals();
+	std::vector<sf::Vector2f> corners = r.getCorners();
+	std::vector<std::vector<sf::Vector2f>> lines = {{corners[1], corners[0]}, {corners[2], corners[1]}, {corners[3], corners[2]}, {corners[3], corners[1]}};
+
+	sf::Vector2f closestPointReal = {0, 0};
+
+	for(std::vector<sf::Vector2f>& line : lines){
+		sf::Vector2f lineVec = {line[1].x - line[0].x, line[1].y - line[0].y};
+		sf::Vector2f relativePos = sf::Vector2f{c.x, c.y} - line[0];
+		float closestPoint = vectorProjection(relativePos, lineVec);
+		if(closestPoint > 1){closestPoint = 1;}
+		if(closestPoint < 0){closestPoint = 0;}
+		sf::Vector2f closestPointPos = line[0] + closestPoint * lineVec;
+		if(distanceSquared({c.x, c.y}, closestPointPos) < distanceSquared({c.x, c.y}, closestPointReal)){closestPointReal = closestPointPos;}
+	}
+
+	sf::Vector2f circleAxis = unitVector({c.x - closestPointReal.x, c.y - closestPointReal.y});
+
 	bool colliding = true;
 
-	for(sf::Vector2f axis : normalsR1){
-		sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
-		sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
+	for(sf::Vector2f axis : normalsR){
+		sf::Vector2f rMinMaxAxis = minAndMaxOnAxis(r, axis);
+		sf::Vector2f cMinMaxAxis = minAndMaxOnAxis(c, axis);
 
-		if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+		if(!(cMinMaxAxis.x <= rMinMaxAxis.y && rMinMaxAxis.x <= cMinMaxAxis.y)){
 			colliding = false;
 			break;
 		}
 	}
-	if(colliding == true){
-	for(sf::Vector2f axis : normalsR2){
-		sf::Vector2f r1MinMaxAxis = minAndMaxOnAxis(r1, axis);
-		sf::Vector2f r2MinMaxAxis = minAndMaxOnAxis(r2, axis);
 
-		if(!(r2MinMaxAxis.x <= r1MinMaxAxis.y && r1MinMaxAxis.x <= r2MinMaxAxis.y)){
+	sf::Vector2f rMinMaxAxis = minAndMaxOnAxis(r, circleAxis);
+	sf::Vector2f cMinMaxAxis = minAndMaxOnAxis(c, circleAxis);
+	if(!(cMinMaxAxis.x <= rMinMaxAxis.y && rMinMaxAxis.x <= cMinMaxAxis.y)){
 			colliding = false;
-			break;
 		}
-	}
-	}
+
+
+
 	return colliding;
 }
-*/
+
+
+
+
 int main()
 {
 	sf::RenderWindow window(sf::VideoMode({1280, 720}), "Collision Tests");
@@ -204,6 +229,7 @@ int main()
 
 	Rectangle rectangle1(100, 30, 300, 300, 30);
 	Rectangle rectangle2(100, 30, 500, 500, -50);
+	Circle circle(50, 50, 0, 0, 0, 0, 1, 25);
 
 	sf::CircleShape c1;
 	c1.setRadius(5);
@@ -239,11 +265,10 @@ int main()
 
 		window.clear();
 		rectangle1.rectangle.setPosition({rectangle1.x, rectangle1.y});
-		window.draw(rectangle1.rectangle);
-		window.draw(rectangle2.rectangle);
+		
 
-		bool colliding = detectCollision(rectangle1, rectangle2);
-		if(colliding){
+		bool collidingR = detectCollision(rectangle1, rectangle2);
+		if(collidingR){
 			rectangle1.rectangle.setFillColor(sf::Color::Red);
 			rectangle2.rectangle.setFillColor(sf::Color::Red);
 		}
@@ -252,7 +277,29 @@ int main()
 			rectangle2.rectangle.setFillColor(sf::Color::White);
 		}
 
+		bool collidingC1 = detectCollision(circle, rectangle1);
+		if(collidingC1){
+			rectangle1.rectangle.setFillColor(sf::Color::Red);
+			circle.circle.setFillColor(sf::Color::Red);
+		}
+		else{
+			rectangle1.rectangle.setFillColor(sf::Color::White);
+			circle.circle.setFillColor(sf::Color::White);
+		}
 
+		bool collidingC2 = detectCollision(circle, rectangle2);
+		if(collidingC2){
+			rectangle2.rectangle.setFillColor(sf::Color::Red);
+			circle.circle.setFillColor(sf::Color::Red);
+		}
+		else{
+			rectangle2.rectangle.setFillColor(sf::Color::White);
+			circle.circle.setFillColor(sf::Color::White);
+		}
+
+		window.draw(rectangle1.rectangle);
+		window.draw(rectangle2.rectangle);
+		circle.draw(window);
 
 		//std::cout << c1.getPosition().y << ' ';
 
